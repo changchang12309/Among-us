@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import messagebox
 from player import Player
 from roles import Role, Crewmate, Impostor
-from tasks import TaskGenerator, WireFixTask  # 新增导入WireFixTask
+from tasks import TaskGenerator
 from map import GameMap
 
 
@@ -26,11 +26,7 @@ class Game:
         self.current_round = 1
         self.game_over = False
         self.winner = None
-    def next_round():
-        """进入下一轮，更新回合数"""
-        global current_round  # 如果是类内变量则用 self.current_round
-        current_round += 1
-        messagebox.showinfo("回合更新", f"已进入第 {current_round} 回合")
+
     def initialize_players(self):
         """初始化玩家（修复：确保所有必要属性初始化）"""
         self.players = [Player(name) for name in self.player_names]
@@ -53,7 +49,7 @@ class Game:
         # 分配内鬼角色
         for i in range(self.num_impostors):
             impostor = Impostor()
-            impostor.set_kill_cooldown(3)  # 设置击杀冷却时间为3回合
+            impostor.set_kill_cooldown(2)  # 设置击杀冷却时间为2回合
             shuffled_players[i].assign_role(impostor)
             # 内鬼无任务，初始化空列表
             shuffled_players[i].tasks = []
@@ -107,6 +103,9 @@ class Game:
         self.game_over = False
         self.winner = None
         
+        # 是否已有玩家出局（防止2人开局1v1时内鬼直接获胜）
+        any_player_out = any(not p.is_alive for p in self.players)
+        
         if alive_crewmates <= 0:
             # 无存活船员，内鬼胜利
             self.game_over = True
@@ -114,7 +113,8 @@ class Game:
         elif alive_impostors == 0:
             self.game_over = True
             self.winner = "crewmate"
-        elif alive_impostors >= alive_crewmates:
+        elif alive_impostors >= alive_crewmates and any_player_out:
+            # 内鬼数量与船员数量相等（且已有人出局），内鬼胜利
             self.game_over = True
             self.winner = "impostor"
         elif all_tasks_completed and alive_crewmates > 0:

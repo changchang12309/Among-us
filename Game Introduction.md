@@ -1,6 +1,6 @@
 # Space Werewolf - Among Us Simplified Version
 
-A Space Werewolf tabletop game developed with Python Tkinter, supporting 4-10 players for local multiplayer.
+A Space Werewolf tabletop game developed with Python Tkinter, supporting single-device play (4-10 players) and LAN multiplayer (2-10 players).
 
 ## Game Introduction
 
@@ -24,14 +24,15 @@ Created by three Chinese middle school students. We have very limited time, plea
 - Vote out all impostors
 
 **Impostor Victory:**
-- Impostor count equals crewmate count
-- Crew fails to repair within 2 rounds after oxygen system is sabotaged
+- Impostor count equals crewmate count (with at least one player eliminated)
+- Crew fails to repair within the time limit after oxygen system is sabotaged
 
 ## Game Interface
 
-### Main Menu
-- Player count selection (4-10 players)
-- Start Game button
+### Mode Selection Lobby (Added in v2.0.0)
+- **Single Player**: the original same-screen turn-based mode
+- **Create Room**: shows the local LAN IP and waits for other players
+- **Join Room**: enter the host's IP and your own name to connect
 
 ### Role Viewing
 - Display player name and role (Crewmate/Impostor)
@@ -71,12 +72,12 @@ Crewmates need to complete 3 regular tasks:
 **Place Bomb:**
 - Impostors can place bombs in any room
 - Consumes 1 action step
-- Placement cooldown: 5 rounds
-- Bomb countdown: 3 minutes (independent real-time timing)
+- Placement cooldown: 5 rounds (150 seconds in multiplayer)
+- Bomb countdown: 3 minutes in single player (independent real-time timing); 60 seconds in multiplayer
 
 **Bomb Explosion Effects:**
 - Kills all crewmates in the room where bomb explodes (impostors unaffected)
-- Explodes in Oxygen → Triggers oxygen repair task (2-round countdown)
+- Explodes in Oxygen → Triggers oxygen repair task
 - Explodes in Security → Triggers security camera repair task
 - Explodes in Spaceship Hall → Disables emergency meeting for 2 rounds
 
@@ -103,21 +104,21 @@ Impostors can sabotage the following systems:
 
 **Oxygen System:**
 - After sabotage, crewmates receive temporary repair task
-- Crew has 2 rounds to repair, failure means impostor victory
+- Crew must repair within the time limit, failure means impostor victory
 
 **Security Cameras:**
 - After sabotage, requires task completion to restore
-- After viewing cameras, all players enter 2-round cooldown
+- After viewing cameras, all players enter cooldown
 
 **Sabotage Cooldown:** - Added in v1.2.0
-- Sabotage system has 2-round cooldown
+- 2-round cooldown in single player, 90 seconds in multiplayer
 - Cannot sabotage again during cooldown
 
 ### Security Cameras Room
 - Only available in Security
 - Shows player and body counts for all rooms
 - Rooms with bombs marked with red bold border
-- **Complete View**: Sets 2-round cooldown for all alive players
+- **Complete View**: Sets cooldown for all alive players
 - **Report Body**: Can directly report bodies to trigger discussion
 
 ### Emergency Meeting
@@ -136,16 +137,42 @@ Impostors can sabotage the following systems:
 - Can switch perspective to view any room
 - Body positions fixed and displayed
 
+### LAN Multiplayer - Added in v2.0.0
+
+**Room System:**
+- The host listens on port `8888`; clients join by entering the host's IP
+- Custom player names supported; duplicates are auto-renamed (e.g. `Player2(1)`)
+- Player count and player list are shown in real time
+
+**Role Assignment:**
+- Assigned randomly by the host and distributed to every client
+- Each client only sees its own role to avoid identity leaks
+
+**Position Synchronization:**
+- The host runs a `12346` sync server inside the game process
+- Full room state (positions, alive status, task progress, sabotage, bombs, bodies) is broadcast every 500ms
+- Position updates are relayed to other players but never echoed back to the sender
+
+**Detached Processes:**
+- Game windows are independent of the lobby; closing the lobby does not affect the game
+- Each client writes its own log: `game_host_*.log`, `game_client_*.log`
+- Exceptions and crashes are recorded in `crash_<pid>.log`
+
+**Multiplayer Cooldowns:**
+- Single player keeps round-based cooldowns; multiplayer uses second-based real-time cooldowns
+- See the "Cooldown Mechanism" table below
+
 ## Cooldown Mechanism
 
-| Skill | Cooldown | Description |
-|:------:|:--------:|:------------|
-| Kill | 3 rounds | Impostor kills crewmate |
-| Shuttle | 3 rounds | Impostor teleports to any room |
-| Monitor | 2 rounds | Effective for all players after viewing monitor |
-| Bomb | 5 rounds | Impostor places bomb |
-| Sabotage | 2 rounds | Impostor sabotages systems |
-| Round 1 | Disabled | Impostors prohibited from killing and shuttling |
+| Skill | Single (rounds) | Multiplayer (seconds) | Description |
+|:-----:|:---------------:|:---------------------:|:------------|
+| Kill | 3 | 45 | Impostor kills crewmate |
+| Shuttle | 3 | 60 | Impostor teleports to any room |
+| Monitor | 2 | 45 | Effective for all players after viewing monitor |
+| Bomb | 5 | 150 | Impostor places bomb |
+| Sabotage | 2 | 90 | Impostor sabotages systems |
+| Bomb fuse | 180s | 60s | Time from placement to explosion |
+| Round 1 | Disabled | Disabled | Impostors prohibited from killing and shuttling |
 
 ## Spaceship Map
 
@@ -155,23 +182,27 @@ Impostors can sabotage the following systems:
   Lower Engine -- Medbay -- Reactor
        |                        |
   Electrical -- Fuel -- Spaceship Hall -- Oxygen
-                     |    |           |
-                  Admin   |        Security
-                            |           |
-                         Communications -- Security
+                   |  |                  |
+                 Admin |              Security
+                       |                  |
+                Communications -------------
 ```
 
 ## Project Structure
 
 ```
 Among-us-main-basic-tkinter-/
-├── main_gui.py      # Main interface logic, GUI core
+├── multiplayer.py   # v2.0.0 entry: mode lobby, room server, role assignment
+├── main_gui.py      # Main game interface, position sync, graphical tasks
 ├── game.py          # Game logic class
 ├── player.py        # Player class definition
 ├── roles.py         # Role class definition (Crewmate/Impostor)
 ├── map.py           # Game map definition
-├── tasks.py         # Task system definition
-├── haikediannao.py  # Backup task interface
+├── tasks.py         # Task system definition (13 graphical tasks)
+├── room_state.py    # Multiplayer room state container
+├── crewmate_entry.py / impostor_entry.py  # Role entry scripts
+├── haikediannao.py  # Morse code mini-game
+├── tests/           # Headless multiplayer protocol self-test
 ├── build/           # Build directory
 └── dist/            # Distribution output directory
 ```
@@ -180,30 +211,40 @@ Among-us-main-basic-tkinter-/
 
 - **Language**: Python 3.11
 - **GUI Framework**: Tkinter
+- **Networking**: TCP socket + JSON line-delimited protocol (ports 8888 / 12346)
 - **Packaging Tool**: PyInstaller
 
 ## How to Run
 
 ### Development Mode
 ```bash
-python main_gui.py
+python multiplayer.py
 ```
+Choose from the mode selection screen: Single Player / Create Room / Join Room.
+
+### LAN Multiplayer
+1. The host selects "Create Room" and notes the LAN IP shown
+2. Other players select "Join Room", enter that IP and their name
+3. Once enough players have joined, the host clicks "Start Game"
+
+> Note: both ends must be on the same LAN, with TCP ports `8888` and `12346` allowed.
 
 ### Packaged Execution
-Project packaged with PyInstaller, can run directly:
-```bash
-./dist/太空狼人杀.exe
-```
+A PyInstaller-packaged exe will be provided with the release.
 
 ## Game Flow
 
-1. **Select Player Count** (4-10 players)
-2. **View Role Info** (Each player views in turn)
-3. **Game Starts**:
-   - Turn-based actions (move, complete tasks, kill, etc.)
-   - Can initiate emergency meetings
-   - Discussion and voting phases
-4. **Game Ends**: Victory side and final identity reveal
+**Single Player:**
+1. Select player count (4-10 players)
+2. View role info (each player views in turn)
+3. Turn-based actions (move, complete tasks, kill, etc.)
+4. Game ends: victory side and final identity reveal
+
+**Multiplayer:**
+1. Create/join a room and wait for players
+2. The host starts; each client opens its own game window
+3. Real-time actions with position synchronization
+4. Game ends: results synced across all clients
 
 ## Development Notes
 
@@ -218,6 +259,7 @@ This game was developed by three Chinese middle school students during their spa
 - Oxygen emergency sabotage mechanism
 - Bomb system and defuse tasks
 - Ruin cleaning system
+- LAN multiplayer with real-time position sync (v2.0.0)
 
 ## Version History
 
@@ -227,3 +269,4 @@ This game was developed by three Chinese middle school students during their spa
 | v1.1.0 | Bomb system, defuse task, security camera bomb markers |
 | v1.1.7 | Download data task optimization, fan click detection optimization |
 | v1.2.0 | Ruin cleaning system, sabotage cooldown, interface optimization |
+| v2.0.0 | LAN multiplayer, position sync, detached processes, multiplayer cooldown balance, multiple crash fixes |

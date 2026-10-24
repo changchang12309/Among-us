@@ -26,6 +26,7 @@ class MorseCodeUnlockGame:
         self.root.title("摩斯密码解锁")
         self.root.geometry("1000x1000+460+165")
         self.root.resizable(True, True)  # 允许窗口缩放
+        self.window_closed = False  # 窗口已关闭标志，防止窗口销毁后继续执行动画
         
         # 摩斯密码与数字对应表
         self.morse_dict = {
@@ -114,21 +115,6 @@ class MorseCodeUnlockGame:
         # 创建全屏Canvas（覆盖整个初始界面）
         self.canvas = tk.Canvas(
             self.frame_start, 
-            bg=self.start_bg,
-            highlightthickness=0
-        )
-        self.canvas.pack(fill="both", expand=True)
-        
-        # 绑定窗口大小变化事件，实现Canvas自适应
-        self.canvas.bind("<Configure>", self._on_canvas_resize)
-        
-        # 绘制初始界面元素
-        self._draw_animation_elements()
-
-    def _create_start_animation(self):
-        # 创建全屏Canvas（覆盖整个初始界面）
-        self.canvas = tk.Canvas(
-            self.frame_start, 
             width=1000, 
             height=1000, 
             bg=self.start_bg,
@@ -136,7 +122,7 @@ class MorseCodeUnlockGame:
         )
         self.canvas.pack(fill="both", expand=True)
         
-         # 绘制小人（卡通风格，适配侧对电脑）
+        # 绘制小人（卡通风格，适配侧对电脑）
         # 1. 头部（圆形）
         self.head = self.canvas.create_oval(
             320+130, 150+150, 420+130, 250+150,
@@ -184,55 +170,70 @@ class MorseCodeUnlockGame:
             font=("SimHei", 18, "bold"),
             fill="#1a1a2e"
         )
-
-    def _on_canvas_resize(self, event):
-        # 当Canvas尺寸变化时，重新绘制所有元素
-        self.canvas.delete("all")
-        self._draw_animation_elements()
-
+    
     # 整张界面渐变动画（电脑不参与渐变）
     def _start_full_gradient_animation(self):
+        # 检查窗口是否已关闭
+        if self.window_closed:
+            return
+        
         if self.gradient_step < 30:  # 30步完成渐变（每100ms一步，共3秒）
-            # 计算RGB渐变值（start_bg: #add8e6 → target_bg: #1a1a2e）
-            start_r = int(self.start_bg[1:3], 16)
-            start_g = int(self.start_bg[3:5], 16)
-            start_b = int(self.start_bg[5:7], 16)
-            
-            target_r = int(self.target_bg[1:3], 16)
-            target_g = int(self.target_bg[3:5], 16)
-            target_b = int(self.target_bg[5:7], 16)
-            
-            # 计算当前步的RGB背景色
-            curr_r = int(start_r - (start_r - target_r) * self.gradient_step/30)
-            curr_g = int(start_g - (start_g - target_g) * self.gradient_step/30)
-            curr_b = int(start_b - (start_b - target_b) * self.gradient_step/30)
-            
-            # 生成当前背景色
-            curr_bg = f"#{curr_r:02x}{curr_g:02x}{curr_b:02x}"
-            
-            # 文本颜色渐变：从黑色(#000000)渐变到初始背景色(#add8e6)
-            text_start_r, text_start_g, text_start_b = 0, 0, 0  # 黑色
-            text_target_r, text_target_g, text_target_b = start_r, start_g, start_b  # 初始背景色
-            
-            # 计算当前步的文本颜色RGB值
-            text_curr_r = int(text_start_r + (text_target_r - text_start_r) * self.gradient_step/30)
-            text_curr_g = int(text_start_g + (text_target_g - text_start_g) * self.gradient_step/30)
-            text_curr_b = int(text_start_b + (text_target_b - text_start_b) * self.gradient_step/30)
-            
-            # 生成当前文本颜色
-            text_color = f"#{text_curr_r:02x}{text_curr_g:02x}{text_curr_b:02x}"
-            
-            # 更新Canvas背景和文本颜色
-            self.canvas.config(bg=curr_bg)
-            self.canvas.itemconfig(self.screen_text, fill=text_color)
-            
-            self.gradient_step += 1
-            self.root.after(100, self._start_full_gradient_animation)
+            try:
+                # 检查窗口是否仍然存在
+                if not self.root.winfo_exists():
+                    self.window_closed = True
+                    return
+                    
+                # 计算RGB渐变值（start_bg: #add8e6 → target_bg: #1a1a2e）
+                start_r = int(self.start_bg[1:3], 16)
+                start_g = int(self.start_bg[3:5], 16)
+                start_b = int(self.start_bg[5:7], 16)
+                
+                target_r = int(self.target_bg[1:3], 16)
+                target_g = int(self.target_bg[3:5], 16)
+                target_b = int(self.target_bg[5:7], 16)
+                
+                # 计算当前步的RGB背景色
+                curr_r = int(start_r - (start_r - target_r) * self.gradient_step/30)
+                curr_g = int(start_g - (start_g - target_g) * self.gradient_step/30)
+                curr_b = int(start_b - (start_b - target_b) * self.gradient_step/30)
+                
+                # 生成当前背景色
+                curr_bg = f"#{curr_r:02x}{curr_g:02x}{curr_b:02x}"
+                
+                # 文本颜色渐变：从黑色(#000000)渐变到初始背景色(#add8e6)
+                text_start_r, text_start_g, text_start_b = 0, 0, 0  # 黑色
+                text_target_r, text_target_g, text_target_b = start_r, start_g, start_b  # 初始背景色
+                
+                # 计算当前步的文本颜色RGB值
+                text_curr_r = int(text_start_r + (text_target_r - text_start_r) * self.gradient_step/30)
+                text_curr_g = int(text_start_g + (text_target_g - text_start_g) * self.gradient_step/30)
+                text_curr_b = int(text_start_b + (text_target_b - text_start_b) * self.gradient_step/30)
+                
+                # 生成当前文本颜色
+                text_color = f"#{text_curr_r:02x}{text_curr_g:02x}{text_curr_b:02x}"
+                
+                # 更新Canvas背景和文本颜色
+                self.canvas.config(bg=curr_bg)
+                self.canvas.itemconfig(self.screen_text, fill=text_color)
+                
+                self.gradient_step += 1
+                self.root.after(100, self._start_full_gradient_animation)
+            except Exception as e:
+                print(f"渐变动画出错: {e}")
+                self.window_closed = True
         else:
             # 渐变完成，确保最终文本颜色与最终背景匹配
-            self.canvas.itemconfig(self.screen_text, fill="#add8e6")
+            try:
+                self.canvas.itemconfig(self.screen_text, fill="#add8e6")
+            except:
+                pass
             # 渐变完成，切换到摩斯解锁界面
-            self.root.after(500, self._switch_to_morse_frame)
+            try:
+                self.root.after(500, self._switch_to_morse_frame)
+            except Exception as e:
+                print(f"切换界面出错: {e}")
+                self.window_closed = True
 
     # -------------------------- 摩斯密码解锁界面（修复边框+抖动） --------------------------
     def _switch_to_morse_frame(self):
@@ -426,7 +427,6 @@ class MorseCodeUnlockGame:
 
     def _create_success_frame(self):
         # 科技感深蓝校徽（单一颜色+发光边框）
-        global success_progress
         self.logo_frame = tk.Frame(
             self.frame_success,
             bg="#add8e6",
@@ -444,14 +444,27 @@ class MorseCodeUnlockGame:
         # 构建图片的绝对路径
         logo_path = os.path.join(script_dir, "pictures//bingtuanerzhong_logo_resized.png")
         
-        self.logo_img = tk.PhotoImage(file=logo_path)
-        self.logo_label = tk.Label(
-            self.logo_frame,
-            image=self.logo_img,
-            bg="#ffffff",
-            bd=0
-        )
-        self.logo_label.pack()
+        try:
+            self.logo_img = tk.PhotoImage(file=logo_path)
+            self.logo_label = tk.Label(
+                self.logo_frame,
+                image=self.logo_img,
+                bg="#ffffff",
+                bd=0
+            )
+            self.logo_label.pack()
+        except Exception as e:
+            print(f"加载校徽图片失败: {e}")
+            # 使用文字代替图片
+            self.logo_label = tk.Label(
+                self.logo_frame,
+                text="✅",
+                font=("SimHei", 60, "bold"),
+                bg="#ffffff",
+                fg="#1a1a2e",
+                bd=0
+            )
+            self.logo_label.pack()
 
         # 快速进度条（浅蓝色自定义样式） - 自适应宽度
         self.success_progress = ttk.Progressbar(
@@ -472,38 +485,105 @@ class MorseCodeUnlockGame:
             fg="#1a1a2e"
             
         )
+        
+        # 确认按钮 - 用于关闭窗口并标记任务完成
+        self.confirm_button = tk.Button(
+            self.frame_success,
+            text="✅ 确认完成",
+            font=("SimHei", 16, "bold"),
+            bg="#27ae60",
+            fg="#ffffff",
+            activebackground="#2ecc71",
+            activeforeground="#ffffff",
+            relief="raised",
+            bd=3,
+            padx=30,
+            pady=10,
+            cursor="hand2",
+            command=self._on_confirm
+        )
 
     # 校徽持续闪烁效果
     def _start_logo_flash(self):
-        if self.flash_state:
-            self.logo_frame.config(highlightbackground="#ffffff", highlightcolor="#ffffff")
-        else:
-            self.logo_frame.config(highlightbackground="#0066cc", highlightcolor="#0066cc")
-        self.flash_state = not self.flash_state
-        self.flash_timer = self.root.after(500, self._start_logo_flash)
+        if self.window_closed:
+            return
+        try:
+            if self.flash_state:
+                self.logo_frame.config(highlightbackground="#ffffff", highlightcolor="#ffffff")
+            else:
+                self.logo_frame.config(highlightbackground="#0066cc", highlightcolor="#0066cc")
+            self.flash_state = not self.flash_state
+            self.flash_timer = self.root.after(500, self._start_logo_flash)
+        except Exception as e:
+            print(f"闪烁效果出错: {e}")
+            self.window_closed = True
 
     # 快速填充进度条
     def _fill_success_progress(self):
-        current = self.success_progress["value"]
-        if current < 100:
-            self.success_progress["value"] = current + 10
-            self.root.after(50, self._fill_success_progress)
-        else:
-            self.success_label.pack(pady=20)
-            # 进度条填满后，自动关闭系统
-            self.root.after(1500, self._auto_close)
-
-    def _auto_close(self):
-        """自动关闭窗口"""
+        if self.window_closed:
+            return
+        try:
+            current = self.success_progress["value"]
+            if current < 100:
+                self.success_progress["value"] = current + 10
+                self.root.after(50, self._fill_success_progress)
+            else:
+                self.success_label.pack(pady=20)
+                # 进度条填满后，显示确认按钮
+                self.confirm_button.pack(pady=20)
+        except Exception as e:
+            print(f"填充进度条出错: {e}")
+            self.window_closed = True
+    
+    def _on_confirm(self):
+        """点击确认按钮，关闭窗口"""
         try:
             # 取消闪烁定时器
             if hasattr(self, 'flash_timer'):
-                self.root.after_cancel(self.flash_timer)
+                try:
+                    self.root.after_cancel(self.flash_timer)
+                except:
+                    pass
+            # 设置完成标志
+            self.ending = 1
+            self.window_closed = True
             # 关闭窗口
             self.root.quit()
             self.root.destroy()
-        except:
-            pass
+        except Exception as e:
+            print(f"关闭窗口出错: {e}")
+
+    def close_window(self):
+        """外部调用关闭窗口"""
+        try:
+            # 先检查窗口是否还存在
+            if not hasattr(self, 'root') or not self.root:
+                return
+            # 检查窗口是否已关闭
+            if self.window_closed:
+                return
+            try:
+                # 取消闪烁定时器
+                if hasattr(self, 'flash_timer'):
+                    try:
+                        self.root.after_cancel(self.flash_timer)
+                    except:
+                        pass
+                # 关闭窗口 - 增加多重保护
+                self.window_closed = True
+                self.ending = 1
+                try:
+                    self.root.quit()
+                except:
+                    pass
+                try:
+                    self.root.destroy()
+                except:
+                    pass
+            except Exception as e:
+                print(f"关闭窗口出错: {e}")
+        except Exception as e:
+            print(f"close_window 出错: {e}")
 
 # -------------------------- 图片校徽替换（可选） --------------------------
 # 替换logo_label代码：

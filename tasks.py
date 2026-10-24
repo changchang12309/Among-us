@@ -31,8 +31,6 @@ class Task:
     def run_task_gui(self, main_root=None) -> bool:
         return False
 
-#main_root
-
 
 class WireFixTask(Task):
     """配电室修复电线任务（带图形化交互）"""
@@ -1050,31 +1048,41 @@ class BodyScanTask(Task):
         # 延迟关闭窗口
         canvas.after(800, lambda: self._cleanup_window(self.task_window))
 class DownloadDataTask(Task):
-    """通讯室下载数据任务（带图形化交互）"""
+    """通讯室下载数据任务（带图形化交互）- 两阶段流程"""
 
     def __init__(self):
-        super().__init__("下载数据", "通讯室", 1)
-        self.task_completed = False  # 记录GUI任务是否完成
-        self.task_window = None      # 任务窗口对象
-        # 核心参数改为实例变量，避免nonlocal问题
-        self.download_progress = 0   # 下载进度（0-100）
-        self.usb_dragging = False    # U盘是否正在拖动
-        self.usb_id = None           # U盘图形ID
-        self.usb_plugged = False     # U盘是否插入接口
-        self.progress_label = None   # 进度显示标签
-        self.download_after_id = None # 进度更新定时器ID
-        self.usb_aligned = False     # U盘是否对准接口
+        super().__init__("下载数据", "通讯室", 2)  # 难度改为2星
+        self.task_completed = False
+        self.task_window = None
+        # 阶段控制
+        self.phase = 1  # 1=下载阶段，2=上传阶段
+        self.download_completed = False
+        self.upload_completed = False
+        # 下载相关
+        self.download_progress = 0
+        self.upload_progress = 0
+        self.usb_dragging = False
+        self.usb_plugged = False
+        self.progress_label = None
+        self.download_after_id = None
+        self.upload_after_id = None
+        self.usb_aligned = False
+        # U盘位置记录
+        self.usb_current_x = 100
+        self.usb_current_y = 320
 
     def run_task_gui(self, main_root=None) -> bool:
-        """
-        运行下载数据的图形化任务界面
-        :param main_root: 主窗口对象（可选）
-        :return: 任务是否完成
-        """
+        """运行下载数据的图形化任务界面"""
         # 重置状态
-        self.usb_aligned = False
-        self.usb_plugged = False
+        self.phase = 1
+        self.download_completed = False
+        self.upload_completed = False
         self.download_progress = 0
+        self.upload_progress = 0
+        self.usb_plugged = False
+        self.usb_aligned = False
+        self.usb_current_x = 100
+        self.usb_current_y = 320
 
         # 确保只创建一个任务窗口
         if self.task_window and (
@@ -1084,437 +1092,376 @@ class DownloadDataTask(Task):
             self.task_window.lift()
             return False
 
-        # 创建窗口（优先使用Toplevel依附主窗口）
+        # 创建窗口
         if main_root and isinstance(main_root, tk.Tk):
             self.task_window = tk.Toplevel(main_root)
         else:
-            self.task_window = tk.Tk()  # 无主窗口时创建独立窗口
+            self.task_window = tk.Tk()
 
         root = self.task_window
         root.title("通讯室 - 下载数据")
         root.geometry("800x600")
         root.configure(bg="#1a1a2e")
         root.resizable(False, False)
-        root.wm_attributes("-topmost", True)  # 窗口置顶
-
-        # 窗口关闭协议：确保正确清理资源
+        root.wm_attributes("-topmost", True)
         root.protocol("WM_DELETE_WINDOW", lambda: self._cleanup_window(root))
 
-        # 中文字体（增加兼容性）
+        # 中文字体
         font_family = "SimHei"
         try:
             tk.font.Font(family=font_family, size=12)
         except:
-            font_family = "Arial"  # 兜底字体
+            font_family = "Arial"
 
-        # 创建UI
-        def create_ui():
-            """创建任务界面"""
-            # 标题
-            title_label = tk.Label(
-                root,
-                text="通讯室 - 下载数据",
-                font=(font_family, 20, "bold"),
-                fg="#e94560",
-                bg="#1a1a2e"
-            )
-            title_label.pack(pady=20)
+        # ========== 创建UI ==========
+        # 标题
+        title_label = tk.Label(
+            root, text="通讯室 - 数据传输", font=(font_family, 20, "bold"),
+            fg="#e94560", bg="#1a1a2e"
+        )
+        title_label.pack(pady=15)
 
-            # 主画布（深蓝色科技底板）
-            main_canvas = tk.Canvas(
-                root,
-                width=700,
-                height=400,
-                bg="#0a1628",  # 深蓝色科技底板
-                highlightthickness=2,
-                highlightbackground="#e94560",
-                cursor="hand2"  # 鼠标悬停显示手型
-            )
-            main_canvas.pack(pady=10)
+        # 主画布
+        main_canvas = tk.Canvas(
+            root, width=700, height=380, bg="#0a1628",
+            highlightthickness=2, highlightbackground="#e94560", cursor="hand2"
+        )
+        main_canvas.pack(pady=10)
 
-            # ========== 绘制电脑主机（右下区域）==========
-            # 主机外壳
-            main_canvas.create_rectangle(
-                480, 80, 650, 350,
-                fill="#2d2d2d", outline="#444444", width=3
-            )
-            # 主机前面板
-            main_canvas.create_rectangle(
-                480, 80, 510, 350,
-                fill="#3d3d3d", outline="#555555", width=2
-            )
-            # 主机电源按钮
-            main_canvas.create_oval(
-                490, 300, 505, 315,
-                fill="#27ae60", outline="#1e8449", width=2
-            )
-            # 主机USB接口（竖着的两个插槽）
-            main_canvas.create_rectangle(
-                492, 240, 500, 260,
-                fill="#1a1a1a", outline="#000000", width=1
-            )
-            main_canvas.create_rectangle(
-                492, 265, 500, 285,
-                fill="#1a1a1a", outline="#000000", width=1
-            )
+        # ========== 绘制电脑主机（右侧）==========
+        main_canvas.create_rectangle(550, 60, 680, 320, fill="#2d2d2d", outline="#444444", width=3)
+        main_canvas.create_rectangle(550, 60, 580, 320, fill="#3d3d3d", outline="#555555", width=2)
+        main_canvas.create_oval(560, 280, 575, 295, fill="#27ae60", outline="#1e8449", width=2)
+        # 主机USB接口
+        main_canvas.create_rectangle(562, 200, 572, 220, fill="#1a1a1a", outline="#000000", width=1)
+        main_canvas.create_rectangle(562, 225, 572, 245, fill="#1a1a1a", outline="#000000", width=1)
+        # 主机接口标签
+        main_canvas.create_text(567, 260, text="USB", font=(font_family, 8), fill="#888888")
 
-            # ========== 显示屏 ==========
-            screen_x1, screen_y1 = 80, 50
-            screen_x2, screen_y2 = 420, 280
-            # 显示屏外壳
-            main_canvas.create_rectangle(
-                screen_x1, screen_y1, screen_x2, screen_y2,
-                fill="#1a1a1a", outline="#333333", width=4
-            )
-            # 显示屏内屏
-            main_canvas.create_rectangle(
-                screen_x1 + 10, screen_y1 + 10, screen_x2 - 10, screen_y2 - 40,
-                fill="#0f3057", outline="#000000", width=2
-            )
-            # 显示屏标题
-            main_canvas.create_text(
-                (screen_x1 + screen_x2)/2, screen_y1 + 35,
-                text="数据下载终端", font=(font_family, 14, "bold"), fill="#00d4ff"
-            )
-            # 进度显示标签
-            self.progress_label = tk.Label(
-                root,
-                text="等待插入设备...",
-                font=(font_family, 28, "bold"),
-                fg="#ff6b6b",
-                bg="#0f3057"
-            )
-            self.progress_label.place(
-                x=(screen_x1 + screen_x2)/2 - 100,
-                y=(screen_y1 + screen_y2)/2 - 50
-            )
-            # 显示屏底座
-            main_canvas.create_rectangle(
-                (screen_x1 + screen_x2)/2 - 40, screen_y2 - 30, (screen_x1 + screen_x2)/2 + 40, screen_y2,
-                fill="#2d2d2d", outline="#444444", width=2
-            )
+        # ========== 绘制显示屏（左侧）==========
+        screen_x1, screen_y1 = 80, 40
+        screen_x2, screen_y2 = 480, 280
+        # 显示屏外壳
+        main_canvas.create_rectangle(screen_x1, screen_y1, screen_x2, screen_y2, fill="#1a1a1a", outline="#333333", width=4)
+        # 显示屏内屏
+        main_canvas.create_rectangle(screen_x1 + 10, screen_y1 + 10, screen_x2 - 10, screen_y2 - 40, fill="#0f3057", outline="#000000", width=2)
+        # 显示屏标题
+        main_canvas.create_text((screen_x1 + screen_x2)/2, screen_y1 + 30, text="数据传输终端", font=(font_family, 14, "bold"), fill="#00d4ff")
+        # 显示屏底座
+        main_canvas.create_rectangle(250, screen_y2, 310, screen_y2 + 25, fill="#2d2d2d", outline="#444444", width=2)
+        
+        # ========== 显示屏下方的USB接口（阶段2目标）==========
+        screen_port_x1, screen_port_y1 = 260, screen_y2 + 30
+        screen_port_x2, screen_port_y2 = 300, screen_port_y1 + 40
+        # 接口外框
+        screen_port_id = main_canvas.create_rectangle(
+            screen_port_x1, screen_port_y1, screen_port_x2, screen_port_y2,
+            fill="#1a1a1a", outline="#444444", width=2, tags="screen_port"
+        )
+        # 接口内部
+        main_canvas.create_rectangle(screen_port_x1 + 3, screen_port_y1 + 5, screen_port_x2 - 3, screen_port_y1 + 18, fill="#333333", outline="#222222", width=1, tags="screen_port")
+        main_canvas.create_rectangle(screen_port_x1 + 3, screen_port_y1 + 22, screen_port_x2 - 3, screen_port_y1 + 35, fill="#333333", outline="#222222", width=1, tags="screen_port")
+        # 接口标签
+        screen_port_label = main_canvas.create_text(
+            (screen_port_x1 + screen_port_x2)/2, screen_port_y2 + 15,
+            text="输入接口", font=(font_family, 9), fill="#888888", tags="screen_port_label"
+        )
+        # 对准提示框（阶段2显示）
+        screen_port_hint = main_canvas.create_rectangle(
+            screen_port_x1 - 25, screen_port_y1 - 15, screen_port_x2 + 25, screen_port_y2 + 15,
+            outline="#ff6b6b", width=2, dash=(5, 5), tags="screen_port_hint"
+        )
+        main_canvas.itemconfig(screen_port_hint, state='hidden')  # 初始隐藏
 
-            # ========== 绘制真实的U盘 ==========
-            usb_init_x, usb_init_y = 100, 320  # U盘初始位置
+        # ========== 进度显示标签 ==========
+        self.progress_label = tk.Label(
+            root, text="等待插入设备...", font=(font_family, 24, "bold"),
+            fg="#ff6b6b", bg="#0f3057"
+        )
+        self.progress_label.place(x=200, y=130)
 
-            # U盘外壳（主体）
-            main_canvas.create_rectangle(
-                usb_init_x, usb_init_y,
-                usb_init_x + 120, usb_init_y + 50,
-                fill="#c0c0c0", outline="#808080", width=2,
-                tags="usb"
-            )
-            # U盘尾部挂绳孔
-            main_canvas.create_oval(
-                usb_init_x + 5, usb_init_y + 18,
-                usb_init_x + 15, usb_init_y + 32,
-                fill="#1a1a1a", outline="#000000", width=1,
-                tags="usb"
-            )
-            # U盘外壳上的文字
-            main_canvas.create_text(
-                usb_init_x + 75, usb_init_y + 25,
-                text="USB", font=(font_family, 10, "bold"), fill="#333333",
-                tags="usb"
-            )
-            # U盘LED指示灯（绿色小圆点）
-            led_id = main_canvas.create_oval(
-                usb_init_x + 95, usb_init_y + 10,
-                usb_init_x + 100, usb_init_y + 15,
-                fill="#333333", outline="#000000", width=1,
-                tags="usb"
-            )
-            # U盘USB金属接口（突出部分）- 这是我们要追踪的部分
-            usb_metal_id = main_canvas.create_rectangle(
-                usb_init_x + 120, usb_init_y + 12,
-                usb_init_x + 135, usb_init_y + 38,
-                fill="#d4af37", outline="#b8860b", width=2,  # 金色金属
-                tags="usb"
-            )
-            # USB接口上的两个小孔（Type-A接口特征）
-            main_canvas.create_rectangle(
-                usb_init_x + 125, usb_init_y + 18,
-                usb_init_x + 130, usb_init_y + 22,
-                fill="#1a1a1a",
-                tags="usb"
-            )
-            main_canvas.create_rectangle(
-                usb_init_x + 125, usb_init_y + 28,
-                usb_init_x + 130, usb_init_y + 32,
-                fill="#1a1a1a",
-                tags="usb"
-            )
+        # ========== 绘制U盘 ==========
+        usb_init_x, usb_init_y = 100, 320
 
-            # U盘上的缺口标记（对准提示）
-            gap_x = usb_init_x + 120
-            main_canvas.create_polygon(
-                gap_x, usb_init_y + 20,
-                gap_x, usb_init_y + 30,
-                gap_x + 5, usb_init_y + 25,
-                fill="#ff0000",
-                tags="usb"
-            )
+        # U盘外壳
+        main_canvas.create_rectangle(
+            usb_init_x, usb_init_y, usb_init_x + 100, usb_init_y + 40,
+            fill="#c0c0c0", outline="#808080", width=2, tags="usb"
+        )
+        # U盘挂绳孔
+        main_canvas.create_oval(
+            usb_init_x + 5, usb_init_y + 12, usb_init_x + 15, usb_init_y + 28,
+            fill="#1a1a1a", outline="#000000", width=1, tags="usb"
+        )
+        # U盘文字
+        main_canvas.create_text(
+            usb_init_x + 55, usb_init_y + 20, text="USB",
+            font=(font_family, 10, "bold"), fill="#333333", tags="usb"
+        )
+        # U盘LED指示灯
+        led_id = main_canvas.create_oval(
+            usb_init_x + 80, usb_init_y + 8, usb_init_x + 88, usb_init_y + 16,
+            fill="#333333", outline="#000000", width=1, tags="usb"
+        )
+        # U盘金属接口
+        usb_metal_id = main_canvas.create_rectangle(
+            usb_init_x + 100, usb_init_y + 8, usb_init_x + 115, usb_init_y + 32,
+            fill="#d4af37", outline="#b8860b", width=2, tags="usb"
+        )
+        # 金属接口小孔
+        main_canvas.create_rectangle(usb_init_x + 103, usb_init_y + 12, usb_init_x + 108, usb_init_y + 17, fill="#1a1a1a", tags="usb")
+        main_canvas.create_rectangle(usb_init_x + 103, usb_init_y + 23, usb_init_x + 108, usb_init_y + 28, fill="#1a1a1a", tags="usb")
 
-            # 保存U盘ID和初始位置
-            self.usb_id = led_id
-            main_canvas.usb_init_x = usb_init_x
-            main_canvas.usb_init_y = usb_init_y
-            main_canvas.usb_width = 135  # 包含金属接口
-            main_canvas.usb_height = 50
-            main_canvas.usb_led_id = led_id
-            main_canvas.usb_metal_id = usb_metal_id  # 保存金属头ID
+        # 保存U盘信息
+        main_canvas.usb_init_x = usb_init_x
+        main_canvas.usb_init_y = usb_init_y
+        main_canvas.usb_led_id = led_id
+        main_canvas.usb_metal_id = usb_metal_id
+        main_canvas.screen_port_x1 = screen_port_x1
+        main_canvas.screen_port_y1 = screen_port_y1
+        main_canvas.screen_port_x2 = screen_port_x2
+        main_canvas.screen_port_y2 = screen_port_y2
 
-            # ========== 电脑主机上的USB接口（目标位置）==========
-            port_x1, port_y1 = 485, 180
-            port_x2, port_y2 = 505, 230
-            # 保存接口的目标中心点（金属头要对准这里）
-            main_canvas.port_center_x = 490
-            main_canvas.port_center_y = 205
+        # ========== 主机USB接口（阶段1目标）==========
+        host_port_x1, host_port_y1 = 555, 130
+        host_port_x2, host_port_y2 = 575, 180
+        main_canvas.create_rectangle(host_port_x1, host_port_y1, host_port_x2, host_port_y2, fill="#1a1a1a", outline="#444444", width=2, tags="host_port")
+        main_canvas.create_rectangle(host_port_x1 + 3, host_port_y1 + 5, host_port_x2 - 3, host_port_y1 + 20, fill="#333333", outline="#222222", width=1, tags="host_port")
+        main_canvas.create_rectangle(host_port_x1 + 3, host_port_y1 + 25, host_port_x2 - 3, host_port_y1 + 40, fill="#333333", outline="#222222", width=1, tags="host_port")
+        # 主机接口提示
+        host_port_hint = main_canvas.create_rectangle(
+            host_port_x1 - 20, host_port_y1 - 15, host_port_x2 + 20, host_port_y2 + 15,
+            outline="#ff6b6b", width=2, dash=(5, 5), tags="host_port_hint"
+        )
+        main_canvas.create_text((host_port_x1 + host_port_x2)/2, host_port_y2 + 25, text="下载接口", font=(font_family, 9), fill="#ff6b6b", tags="host_port_label")
 
-            # 接口外框
-            main_canvas.create_rectangle(
-                port_x1, port_y1, port_x2, port_y2,
-                fill="#1a1a1a", outline="#444444", width=2,
-                tags="port"
-            )
-            # 接口内部插槽
-            main_canvas.create_rectangle(
-                port_x1 + 3, port_y1 + 5,
-                port_x2 - 3, port_y1 + 20,
-                fill="#333333", outline="#222222", width=1,
-                tags="port"
-            )
-            main_canvas.create_rectangle(
-                port_x1 + 3, port_y1 + 25,
-                port_x2 - 3, port_y1 + 40,
-                fill="#333333", outline="#222222", width=1,
-                tags="port"
-            )
-            # 接口标签
-            main_canvas.create_text(
-                (port_x1 + port_x2)/2, port_y2 + 15,
-                text="USB 3.0", font=(font_family, 9), fill="#888888"
-            )
+        # 保存主机接口信息
+        main_canvas.host_port_center_x = (host_port_x1 + host_port_x2) / 2
+        main_canvas.host_port_center_y = (host_port_y1 + host_port_y2) / 2
+        main_canvas.screen_port_center_x = (screen_port_x1 + screen_port_x2) / 2
+        main_canvas.screen_port_center_y = (screen_port_y1 + screen_port_y2) / 2
 
-            # 对准标记（红色虚线提示区域）
-            main_canvas.create_rectangle(
-                port_x1 - 30, port_y1 - 20,
-                port_x2 + 30, port_y2 + 20,
-                outline="#ff6b6b", width=2, dash=(5, 5),
-                tags="port_hint"
-            )
-            # 对准提示文字
-            main_canvas.create_text(
-                (port_x1 + port_x2)/2, port_y2 + 35,
-                text="将U盘插入此处", font=(font_family, 10), fill="#ff6b6b"
-            )
+        # ========== 状态标签 ==========
+        status_label = tk.Label(
+            root, text="阶段1/2：将U盘插入右侧主机的下载接口",
+            font=(font_family, 12), fg="#ffffff", bg="#1a1a2e"
+        )
+        status_label.pack(pady=10)
 
-            # 保存接口位置信息
-            main_canvas.port_x1 = port_x1
-            main_canvas.port_y1 = port_y1
-            main_canvas.port_x2 = port_x2
-            main_canvas.port_y2 = port_y2
+        # ========== 阶段指示器 ==========
+        phase_frame = tk.Frame(root, bg="#1a1a2e")
+        phase_frame.pack(pady=5)
+        
+        phase1_label = tk.Label(phase_frame, text="① 下载资料", font=(font_family, 11, "bold"), fg="#00d4ff", bg="#1a1a2e")
+        phase1_label.pack(side="left", padx=20)
+        
+        phase2_label = tk.Label(phase_frame, text="② 输入资料", font=(font_family, 11), fg="#666666", bg="#1a1a2e")
+        phase2_label.pack(side="left", padx=20)
 
-            # 任务状态标签
-            status_label = tk.Label(
-                root,
-                text="💡 提示：将U盘从左侧拖到右侧主机的USB接口中",
-                font=(font_family, 12),
-                fg="#ffffff",
-                bg="#1a1a2e"
-            )
-            status_label.pack(pady=10)
+        # 保存UI引用
+        main_canvas.status_label = status_label
+        main_canvas.phase1_label = phase1_label
+        main_canvas.phase2_label = phase2_label
+        main_canvas.host_port_hint = host_port_hint
+        main_canvas.screen_port_hint = screen_port_hint
 
-            return main_canvas, status_label
-
-        # U盘拖动事件处理
+        # ========== U盘拖动事件 ==========
         def on_usb_click(event):
-            """点击U盘开始拖动"""
-            if self.usb_plugged or self.download_progress >= 100:
+            if self.download_progress >= 100 and self.upload_progress >= 100:
                 return
-            # 检查是否点击到U盘（通过tags判断）
             items = event.widget.find_overlapping(event.x, event.y, event.x, event.y)
             for item in items:
                 if "usb" in event.widget.gettags(item):
                     self.usb_dragging = True
-                    # 记录鼠标初始位置
                     event.widget.start_x = event.x
                     event.widget.start_y = event.y
-                    # 提升U盘层级
                     event.widget.tag_raise("usb")
                     break
 
         def on_usb_drag(event):
-            """拖动U盘"""
-            if not self.usb_dragging or self.usb_plugged or self.download_progress >= 100:
+            if not self.usb_dragging:
                 return
             canvas = event.widget
-            # 计算移动偏移量
             dx = event.x - canvas.start_x
             dy = event.y - canvas.start_y
-            # 移动整个U盘（所有usb标签的图形）
             for item in canvas.find_withtag("usb"):
                 canvas.move(item, dx, dy)
-            # 更新鼠标起始位置
             canvas.start_x = event.x
             canvas.start_y = event.y
 
-            # 获取金属头当前位置（中心点）
+            # 获取金属头位置
             metal_coords = canvas.coords(canvas.usb_metal_id)
             metal_center_x = (metal_coords[0] + metal_coords[2]) / 2
             metal_center_y = (metal_coords[1] + metal_coords[3]) / 2
 
-            # 检测金属头是否靠近插口（30像素范围内）
-            distance = ((metal_center_x - canvas.port_center_x) ** 2 + 
-                       (metal_center_y - canvas.port_center_y) ** 2) ** 0.5
-            
-            if distance < 30 and not self.usb_plugged:
-                # 自动吸附！
-                self.usb_dragging = False  # 停止拖动
-                self.usb_plugged = True
-                
-                # 计算吸附的偏移量
-                target_metal_x = canvas.port_center_x - 7.5  # 金属头宽度的一半
-                target_metal_y = canvas.port_center_y - 13
-                dx_adjust = target_metal_x - metal_coords[0]
-                dy_adjust = target_metal_y - metal_coords[1]
-                
-                # 移动整个U盘
-                for item in canvas.find_withtag("usb"):
-                    canvas.move(item, dx_adjust, dy_adjust)
-                
-                # LED变绿表示已连接
-                canvas.itemconfig(canvas.usb_led_id, fill="#27ae60")
-                status_label.config(text="🔄 设备已连接，正在传输数据...", fg="#00d4ff")
-                
-                # 开始下载进度
-                self.start_download(canvas, status_label)
-                return
+            # 阶段1：检测主机接口
+            if self.phase == 1 and not self.download_completed:
+                distance = ((metal_center_x - canvas.host_port_center_x) ** 2 + (metal_center_y - canvas.host_port_center_y) ** 2) ** 0.5
+                if distance < 35:
+                    self.usb_dragging = False
+                    self.usb_plugged = True
+                    # 吸附到主机接口
+                    target_x = canvas.host_port_center_x - 7.5
+                    target_y = canvas.host_port_center_y - 12
+                    adjust_dx = target_x - metal_coords[0]
+                    adjust_dy = target_y - metal_coords[1]
+                    for item in canvas.find_withtag("usb"):
+                        canvas.move(item, adjust_dx, adjust_dy)
+                    # LED变绿
+                    canvas.itemconfig(canvas.usb_led_id, fill="#27ae60")
+                    canvas.status_label.config(text="正在下载资料...", fg="#00d4ff")
+                    self.progress_label.config(text="下载中 0%", fg="#f39c12")
+                    self.start_download(canvas)
+                    return
 
-            # 显示对准状态
-            if distance < 50:
-                if not self.usb_aligned:
-                    self.usb_aligned = True
-                    status_label.config(text="✅ 靠近接口了，继续移动！", fg="#27ae60")
-            else:
-                if self.usb_aligned:
-                    self.usb_aligned = False
-                    status_label.config(text="💡 提示：将U盘从左侧拖到右侧主机的USB接口中", fg="#ffffff")
+            # 阶段2：检测显示屏接口
+            if self.phase == 2 and self.download_completed and not self.upload_completed:
+                distance = ((metal_center_x - canvas.screen_port_center_x) ** 2 + (metal_center_y - canvas.screen_port_center_y) ** 2) ** 0.5
+                if distance < 35:
+                    self.usb_dragging = False
+                    self.usb_plugged = True
+                    # 吸附到显示屏接口
+                    target_x = canvas.screen_port_center_x - 7.5
+                    target_y = canvas.screen_port_center_y - 12
+                    adjust_dx = target_x - metal_coords[0]
+                    adjust_dy = target_y - metal_coords[1]
+                    for item in canvas.find_withtag("usb"):
+                        canvas.move(item, adjust_dx, adjust_dy)
+                    canvas.itemconfig(canvas.usb_led_id, fill="#27ae60")
+                    canvas.status_label.config(text="正在输入资料...", fg="#00d4ff")
+                    self.progress_label.config(text="输入中 0%", fg="#f39c12")
+                    self.start_upload(canvas)
+                    return
 
         def on_usb_release(event):
-            """释放U盘（只有在没自动吸附时才会触发）"""
-            if self.usb_plugged or self.download_progress >= 100:
+            if self.usb_plugged:
                 return
             self.usb_dragging = False
-            canvas = event.widget
-            # 如果释放时已经很接近了，也自动吸附
-            metal_coords = canvas.coords(canvas.usb_metal_id)
-            metal_center_x = (metal_coords[0] + metal_coords[2]) / 2
-            metal_center_y = (metal_coords[1] + metal_coords[3]) / 2
-            distance = ((metal_center_x - canvas.port_center_x) ** 2 + 
-                       (metal_center_y - canvas.port_center_y) ** 2) ** 0.5
-            if distance < 40:
-                # 也吸附
-                self.usb_plugged = True
-                target_metal_x = canvas.port_center_x - 7.5
-                target_metal_y = canvas.port_center_y - 13
-                dx_adjust = target_metal_x - metal_coords[0]
-                dy_adjust = target_metal_y - metal_coords[1]
-                for item in canvas.find_withtag("usb"):
-                    canvas.move(item, dx_adjust, dy_adjust)
-                canvas.itemconfig(canvas.usb_led_id, fill="#27ae60")
-                status_label.config(text="🔄 设备已连接，正在传输数据...", fg="#00d4ff")
-                self.start_download(canvas, status_label)
-                return
-            # 否则返回初始位置
-            current_x = canvas.coords(canvas.usb_led_id)[0]
-            current_y = canvas.coords(canvas.usb_led_id)[1]
-            dx = canvas.usb_init_x - current_x
-            dy = canvas.usb_init_y - current_y
-            for item in canvas.find_withtag("usb"):
-                canvas.move(item, dx, dy)
-            status_label.config(text="💡 提示：将U盘从左侧拖到右侧主机的USB接口中", fg="#ffffff")
 
-        # 创建UI并绑定事件
-        main_canvas, status_label = create_ui()
-
-        # 绑定U盘拖动事件
+        # 绑定事件
         main_canvas.bind("<ButtonPress-1>", on_usb_click)
         main_canvas.bind("<B1-Motion>", on_usb_drag)
         main_canvas.bind("<ButtonRelease-1>", on_usb_release)
 
-        # 启动主循环（增加异常处理）
+        # 启动主循环
         try:
             root.mainloop()
         except Exception as e:
-            print(f"数据下载任务GUI运行错误: {e}")
+            print(f"数据传输任务GUI运行错误: {e}")
             self.task_completed = False
 
-        # GUI关闭后，返回任务是否完成
         if self.task_completed:
-            self.complete()  # 标记任务为已完成
+            self.complete()
             return True
         return False
 
+    def start_download(self, canvas):
+        """开始下载进度"""
+        if self.download_progress >= 100:
+            return
+        self.download_progress += 10
+        if self.download_progress > 100:
+            self.download_progress = 100
+
+        self.progress_label.config(text=f"下载中 {self.download_progress}%", fg="#27ae60" if self.download_progress > 50 else "#f39c12")
+
+        if self.download_progress >= 100:
+            self.complete_download_phase(canvas)
+            return
+
+        self.download_after_id = canvas.after(800, self.start_download, canvas)
+
+    def complete_download_phase(self, canvas):
+        """完成下载阶段"""
+        self.download_completed = True
+        self.phase = 2
+        self.usb_plugged = False
+
+        # 更新UI
+        self.progress_label.config(text="下载完成!", fg="#00ff00")
+        canvas.status_label.config(text="阶段2/2：将U盘插入显示屏下方的输入接口", fg="#ffcc00")
+        
+        # 更新阶段指示器
+        canvas.phase1_label.config(fg="#27ae60")
+        canvas.phase2_label.config(fg="#00d4ff", font=("SimHei", 11, "bold"))
+        
+        # 隐藏主机提示，显示显示屏提示
+        canvas.itemconfig(canvas.host_port_hint, state='hidden')
+        canvas.itemconfig(canvas.screen_port_hint, state='normal')
+        
+        # LED闪烁提示
+        canvas.itemconfig(canvas.usb_led_id, fill="#ffcc00")
+        
+        # 将U盘移回初始位置附近
+        metal_coords = canvas.coords(canvas.usb_metal_id)
+        current_metal_x = metal_coords[0]
+        current_metal_y = metal_coords[1]
+        # 移动到左侧可拖动区域
+        target_x = 100
+        target_y = 320
+        dx = target_x - current_metal_x
+        dy = target_y - current_metal_y
+        for item in canvas.find_withtag("usb"):
+            canvas.move(item, dx, dy)
+        
+        # LED变回待机状态
+        canvas.after(500, lambda: canvas.itemconfig(canvas.usb_led_id, fill="#333333"))
+
+    def start_upload(self, canvas):
+        """开始上传进度"""
+        if self.upload_progress >= 100:
+            return
+        self.upload_progress += 10
+        if self.upload_progress > 100:
+            self.upload_progress = 100
+
+        self.progress_label.config(text=f"输入中 {self.upload_progress}%", fg="#27ae60" if self.upload_progress > 50 else "#f39c12")
+
+        if self.upload_progress >= 100:
+            self.complete_upload_phase(canvas)
+            return
+
+        self.upload_after_id = canvas.after(800, self.start_upload, canvas)
+
+    def complete_upload_phase(self, canvas):
+        """完成上传阶段"""
+        self.upload_completed = True
+        self.task_completed = True
+
+        # 更新UI
+        self.progress_label.config(text="传输完成!", fg="#00ff00")
+        canvas.status_label.config(text="任务完成!", fg="#00ff00")
+        canvas.phase2_label.config(fg="#27ae60")
+        
+        # LED常亮绿色
+        canvas.itemconfig(canvas.usb_led_id, fill="#00ff00")
+        
+        # 禁用拖动
+        canvas.unbind("<ButtonPress-1>")
+        canvas.unbind("<B1-Motion>")
+        canvas.unbind("<ButtonRelease-1>")
+
+        # 弹出完成提示
+        messagebox.showinfo("任务完成", "数据传输完成！")
+        canvas.after(800, lambda: self._cleanup_window(self.task_window))
+
     def _cleanup_window(self, root):
-        """窗口清理函数"""
-        # 取消进度更新定时器
+        """清理窗口"""
         if self.download_after_id:
             try:
                 root.after_cancel(self.download_after_id)
             except:
                 pass
+        if self.upload_after_id:
+            try:
+                root.after_cancel(self.upload_after_id)
+            except:
+                pass
         self.usb_dragging = False
         self.usb_plugged = False
-        self.usb_aligned = False
         if root:
             root.quit()
             root.destroy()
-
-    def start_download(self, canvas, status_label):
-        """开始下载进度更新（实例方法）"""
-        if self.download_progress >= 100 or not self.usb_plugged:
-            return
-
-        # 更新进度（每秒涨8%，需要约12.5秒完成，略慢一些增加紧张感）
-        self.download_progress += 8
-        if self.download_progress > 100:
-            self.download_progress = 100
-
-        # 更新进度显示
-        if self.progress_label:
-            self.progress_label.config(text=f"{self.download_progress}%", fg="#27ae60" if self.download_progress > 50 else "#f39c12")
-        status_label.config(text=f"🔄 数据传输中... {self.download_progress}%")
-
-        # 进度到100%，完成任务
-        if self.download_progress >= 100:
-            self.complete_download(canvas, status_label)
-            return
-
-        # 继续更新进度（1秒后）
-        self.download_after_id = canvas.after(1000, self.start_download, canvas, status_label)
-
-    def complete_download(self, canvas, status_label):
-        """完成下载任务（实例方法）"""
-        self.usb_plugged = False
-        status_label.config(text="✅ 传输完成！", fg="#00ff00")
-
-        if self.progress_label:
-            self.progress_label.config(text="完成！", fg="#00ff00")
-
-        # LED闪烁完成
-        canvas.itemconfig(canvas.usb_led_id, fill="#00ff00")
-
-        # 禁用U盘拖动（解绑事件）
-        canvas.unbind("<ButtonPress-1>")
-        canvas.unbind("<B1-Motion>")
-        canvas.unbind("<ButtonRelease-1>")
-
-        self.task_completed = True
-        # 弹出完成提示
-        messagebox.showinfo("任务完成", "🎉 数据下载完成！")
-        # 延迟关闭窗口（让用户看到提示）
-        canvas.after(1000, lambda: self._cleanup_window(self.task_window))
 
 
 class CalibrateDownEngineTask(Task):
@@ -3661,11 +3608,6 @@ class StartSatelliteTask(Task):
         if not self.task_window.master:
             self.task_window.quit()
 
-import tkinter as tk
-from tkinter import messagebox
-import math
-from tasks import Task  # 导入基础Task类
-
 class OxygenRepairTask(Task):
     """修复氧气管道任务（适配游戏主窗口的模态弹窗版）"""
     def __init__(self):
@@ -4071,10 +4013,6 @@ class OxygenRepairTask(Task):
         self.is_completed = True
         return True
 
-import tkinter as tk
-from tkinter import messagebox
-import math
-from tasks import Task  # 导入基础Task类
 class MorseCodeTask(Task):
     """摩斯密码解锁任务（带图形化交互）"""
     
@@ -4082,6 +4020,7 @@ class MorseCodeTask(Task):
         super().__init__("破解摩斯密码", "主控室", 3)
         self.task_completed = False  # 记录GUI任务是否完成
         self.task_window = None
+        self.game_instance = None  # 保存游戏实例供外部关闭使用
     
     def run_task_gui(self, main_root=None) -> bool:
         """
@@ -4089,51 +4028,102 @@ class MorseCodeTask(Task):
         :param main_root: 主窗口对象（可选）
         :return: 任务是否完成
         """
-        # 确保只创建一个任务窗口
-        if self.task_window and tk.Toplevel.winfo_exists(self.task_window):
-            self.task_window.lift()
-            return False
-        
-        # 创建窗口（优先使用Toplevel依附主窗口）
-        if main_root and isinstance(main_root, tk.Tk):
-            self.task_window = tk.Toplevel(main_root)
-            # 设置为模态窗口
-            self.task_window.transient(main_root)
-            self.task_window.grab_set()
-        else:
-            self.task_window = tk.Tk()  # 无主窗口时创建独立窗口
-        
-        root = self.task_window
-        root.title("主控室 - 摩斯密码解锁任务")
-        root.geometry("1000x1000")
-        root.configure(bg="#add8e6")
-        root.resizable(True, True)
-        
-        # 确保窗口关闭时正确清理
-        def on_close():
-            self.task_completed = False
-            if main_root:
-                self.task_window.destroy()
+        try:
+            # 确保只创建一个任务窗口
+            if self.task_window and tk.Toplevel.winfo_exists(self.task_window):
+                self.task_window.lift()
+                return False
+            
+            # 创建窗口（优先使用Toplevel依附主窗口）
+            if main_root and isinstance(main_root, tk.Tk):
+                self.task_window = tk.Toplevel(main_root)
+                # 设置为模态窗口但不独占焦点（允许主窗口弹出消息框）
+                self.task_window.transient(main_root)
             else:
-                root.quit()
-                root.destroy()
-        
-        root.protocol("WM_DELETE_WINDOW", on_close)
-        
-        # 创建摩斯密码解锁游戏实例
-        import haikediannao  # 导入海克迪脑模块
-        game_instance = haikediannao.MorseCodeUnlockGame(root)
-        
-        # 运行窗口（适配模态模式）
-        if main_root:
-            root.wait_window()  # 阻塞直到窗口关闭
-        else:
+                self.task_window = tk.Tk()  # 无主窗口时创建独立窗口
+            
+            root = self.task_window
+            root.title("主控室 - 摩斯密码解锁任务")
+            root.geometry("1000x1000")
+            root.configure(bg="#add8e6")
+            root.resizable(True, True)
+            root.wm_attributes("-topmost", False)  # 不置顶，允许主窗口消息框显示在上面
+            
+            # 创建摩斯密码解锁游戏实例
+            import haikediannao  # 导入海克迪脑模块
+            self.game_instance = haikediannao.MorseCodeUnlockGame(root)
+            
+            # 确保窗口关闭时正确清理
+            def on_close():
+                # 只在任务未完成时设置为False，避免覆盖游戏完成状态
+                if not self.task_completed:
+                    self.task_completed = False
+                try:
+                    if main_root:
+                        self.task_window.destroy()
+                    else:
+                        root.quit()
+                        root.destroy()
+                except Exception as e:
+                    print(f"关闭窗口时出错: {e}")
+            
+            root.protocol("WM_DELETE_WINDOW", on_close)
+            
+            # 启动Tkinter主循环（阻塞直到窗口关闭）
             root.mainloop()
-        
-        # 检查游戏是否成功完成
-        self.is_completed = game_instance.ending == 1
-        self.task_completed = game_instance.ending == 1
-        return self.task_completed
+            
+            # 主循环结束后检查任务是否完成
+            if self.game_instance and self.game_instance.ending == 1:
+                self.task_completed = True
+                self.complete()
+                return True
+            return False
+        except Exception as e:
+            print(f"摩斯密码任务出错: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def wait_for_completion(self):
+        """等待游戏完成（阻塞直到游戏结束）"""
+        if self.game_instance and self.task_window:
+            try:
+                # 轮询等待游戏完成
+                while self.task_window and tk.Toplevel.winfo_exists(self.task_window):
+                    if self.game_instance.ending == 1:
+                        break
+                    # 让主循环处理事件
+                    self.task_window.update_idletasks()
+                    self.task_window.after(50)
+            except Exception as e:
+                print(f"等待游戏完成出错: {e}")
+    
+    def is_game_completed(self):
+        """检查游戏是否完成"""
+        if self.game_instance:
+            return self.game_instance.ending == 1
+        return False
+    
+    def close_task_window(self):
+        """关闭任务窗口（由主界面调用）"""
+        try:
+            # 先检查 task_window 是否还存在
+            if self.task_window:
+                try:
+                    if isinstance(self.task_window, tk.Toplevel) and tk.Toplevel.winfo_exists(self.task_window):
+                        self.task_window.destroy()
+                    elif isinstance(self.task_window, tk.Tk) and tk.Tk.winfo_exists(self.task_window):
+                        self.task_window.destroy()
+                except:
+                    pass
+            # 再尝试通过 game_instance 关闭（双重保险）
+            if self.game_instance:
+                try:
+                    self.game_instance.close_window()
+                except:
+                    pass
+        except Exception as e:
+            print(f"关闭摩斯密码窗口出错: {e}")
 
 class RepairMonitorTask(Task):
     """监控室 - 修复监控任务（困难版，三步骤）"""
@@ -5195,7 +5185,7 @@ class TaskGenerator:
 
 
 if __name__ == "__main__":
-    task = RuinCleanTask()    
+    task = DownloadDataTask()    
     result = task.run_task_gui()
     
 
