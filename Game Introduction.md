@@ -1,6 +1,6 @@
 # Space Werewolf - Among Us Simplified Version
 
-A Space Werewolf tabletop game developed with Python Tkinter, supporting single-device play (4-10 players) and LAN multiplayer (2-10 players).
+A Space Werewolf tabletop game developed with Python Tkinter, supporting single-device play (4-10 players) and LAN multiplayer (4-10 players).
 
 ## Game Introduction
 

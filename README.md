@@ -1,7 +1,7 @@
 # 🚀 Space Werewolf - Among Us Simplified Version
 
 > A turn-based strategy deduction game inspired by Among Us, built with Python Tkinter.
-> Supports single-device play (4-10 players) and **LAN multiplayer** (2-10 players).
+> Supports single-device play (4-10 players) and **LAN multiplayer** (4-10 players).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![Tkinter](https://img.shields.io/badge/GUI-Tkinter-green.svg)](https://docs.python.org/3/library/tkinter.html)
@@ -11,7 +11,7 @@
 ---
 
 
-A Space Werewolf tabletop game developed with Python Tkinter, supporting single-device play (4-10 players) and LAN multiplayer (2-10 players).
+A Space Werewolf tabletop game developed with Python Tkinter, supporting single-device play (4-10 players) and LAN multiplayer (4-10 players).
 
 ## Game Introduction
 
